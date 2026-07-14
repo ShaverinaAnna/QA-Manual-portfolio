@@ -53,5 +53,7 @@ QA Engineer с 2-летним опытом ручного тестировани
 - стандартный набор QA-проверок API (status, headers, schema, validation, auth, performance);
 - Pre-request / Tests скрипты на уровне коллекции и запросов;
 - готовый импорт: [`postman/Olymp.postman_collection.json`](./postman/Olymp.postman_collection.json).
+- Типы запросов, применяемые в проекте: <img width="818" height="475" alt="примеры запросов апи" src="https://github.com/user-attachments/assets/5793b0da-efa3-453f-a4b3-cc3419074aec" />
+
 
 Подробности: **[API.md](./API.md)**.
