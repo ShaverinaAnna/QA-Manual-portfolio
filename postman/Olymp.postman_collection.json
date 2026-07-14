@@ -1,0 +1,397 @@
+{
+  "info": {
+    "name": "Olymp",
+    "description": "API-тесты QA sandbox (mythology). Workspace study_ancient. Collection-level pre/post scripts + request-level checks.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://api.qasandbox.ru/api" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const baseUrl = pm.environment.get(\"base_url\") || \"https://api.qasandbox.ru/api\";",
+          "pm.environment.set(\"base_url\", baseUrl);",
+          "if (!pm.environment.get(\"run_id\")) {",
+          "    pm.environment.set(\"run_id\", Date.now().toString());",
+          "}",
+          "const runId = pm.environment.get(\"run_id\");",
+          "if (!pm.environment.get(\"username\")) {",
+          "    pm.environment.set(\"username\", `qa_user_${runId}`);",
+          "}",
+          "if (!pm.environment.get(\"password\")) {",
+          "    pm.environment.set(\"password\", `Qa_Pass_${runId.slice(-6)}!`);",
+          "}",
+          "const token = pm.environment.get(\"token\");",
+          "if (token) {",
+          "    pm.request.headers.upsert({ key: \"Authorization\", value: `Bearer ${token}` });",
+          "}",
+          "pm.request.headers.upsert({ key: \"Accept\", value: \"application/json\" });",
+          "if ([\"POST\", \"PUT\", \"PATCH\"].includes(pm.request.method)) {",
+          "    pm.request.headers.upsert({ key: \"Content-Type\", value: \"application/json\" });",
+          "}",
+          "console.log(`[PRE] ${pm.request.method} ${pm.info.requestName}`);"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Status code is returned\", function () {",
+          "    pm.expect(pm.response.code).to.be.a(\"number\");",
+          "    pm.expect(pm.response.code).to.be.within(100, 599);",
+          "});",
+          "pm.test(\"Response time < 2000 ms\", function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+          "});",
+          "const contentType = pm.response.headers.get(\"Content-Type\") || \"\";",
+          "if (pm.response.code !== 204 && pm.response.text()) {",
+          "    pm.test(\"Content-Type is JSON when body exists\", function () {",
+          "        pm.expect(contentType.toLowerCase()).to.include(\"application/json\");",
+          "    });",
+          "    pm.test(\"Body is valid JSON\", function () {",
+          "        pm.response.to.be.json;",
+          "        pm.expect(() => pm.response.json()).to.not.throw();",
+          "    });",
+          "}",
+          "pm.test(\"No 5xx server error\", function () {",
+          "    pm.expect(pm.response.code, pm.response.text()).to.be.below(500);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Registry - 201 created",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Registry: 201 Created\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Success message present\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property(\"message\");",
+                  "    pm.expect(String(body.message).toLowerCase()).to.match(/регистрац|success|успеш/i);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/register",
+            "description": "Успешная регистрация пользователя"
+          }
+        },
+        {
+          "name": "Registry - validation checks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Validation: expect 400 or 422 for blank fields\", function () {",
+                  "    pm.expect([400, 422]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test(\"Error body is not empty\", function () {",
+                  "    pm.expect(pm.response.text().length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"   \",\n  \"password\": \"   \"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/register",
+            "description": "Негатив: пробельные username/password. Ожидается 400 Bad Request."
+          }
+        },
+        {
+          "name": "Login - 200 OK",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Login: 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Save token to environment\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const token = body.token || body.access_token || body.access ||",
+                  "        (body.data && (body.data.token || body.data.access_token));",
+                  "    pm.expect(token, \"token not found in Login response\").to.be.ok;",
+                  "    pm.environment.set(\"token\", token);",
+                  "    const uid = body.user_id || body.id || (body.user && body.user.id);",
+                  "    if (uid) { pm.environment.set(\"user_id\", String(uid)); }",
+                  "    console.log(\"[POST] token saved\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/login",
+            "description": "Логин и сохранение Bearer token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mythology",
+      "item": [
+        {
+          "name": "Get mythology list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"List: 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response contains array\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const list = Array.isArray(body) ? body : (body.data || body.results || body.items || body.mythology);",
+                  "    pm.expect(list, \"expected array\").to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/mythology",
+            "description": "Список всех mythology-сущностей"
+          }
+        },
+        {
+          "name": "Get mythology filter creatures",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Filter list: 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"category=creatures applied when items present\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const list = Array.isArray(body) ? body : (body.data || body.results || body.items || []);",
+                  "    if (list.length > 0 && list[0].category !== undefined) {",
+                  "        list.forEach(item => pm.expect(item.category).to.eql(\"creatures\"));",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/mythology?category=creatures&sort=asc",
+            "description": "Фильтр category=creatures и sort=asc"
+          }
+        },
+        {
+          "name": "Create God - 200 ok",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Create God: 200 or 201\", function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test(\"category is gods when present\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const item = body.data || body;",
+                  "    if (item.category !== undefined) {",
+                  "        pm.expect(item.category).to.eql(\"gods\");",
+                  "    }",
+                  "});",
+                  "pm.test(\"Save mythology_id\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const item = body.data || body;",
+                  "    const id = item.id || body.id;",
+                  "    pm.expect(id, \"id missing\").to.be.ok;",
+                  "    pm.environment.set(\"mythology_id\", String(id));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Athena {{run_id}}\",\n  \"category\": \"gods\",\n  \"description\": \"QA auto-created god entity\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/mythology",
+            "description": "Создание сущности category=gods"
+          }
+        },
+        {
+          "name": "Create God - 400 bad - not all fields",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Create without required fields: 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/mythology",
+            "description": "Негатив: неполные/пустые обязательные поля"
+          }
+        },
+        {
+          "name": "Get mythology by id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Get by id: 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"id matches mythology_id\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const item = body.data || body;",
+                  "    if (item.id !== undefined) {",
+                  "        pm.expect(String(item.id)).to.eql(String(pm.environment.get(\"mythology_id\")));",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/mythology/{{mythology_id}}",
+            "description": "Чтение одной записи по id"
+          }
+        },
+        {
+          "name": "Change part god - 200 ok",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PATCH: 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response is JSON after PATCH\", function () {",
+                  "    pm.response.to.be.json;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated by QA patch {{run_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{base_url}}/mythology/{{mythology_id}}",
+            "description": "Частичное обновление сущности"
+          }
+        },
+        {
+          "name": "Delete mythology",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DELETE: 200 or 204\", function () {",
+                  "    pm.expect([200, 204]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/mythology/{{mythology_id}}",
+            "description": "Удаление сущности"
+          }
+        }
+      ]
+    }
+  ]
+}
